@@ -13,6 +13,7 @@ Image SVG Studio é um editor desktop open source para importar imagens, detecta
 - Verificação automática de atualizações no GitHub
 - Changelog da release exibido dentro do aplicativo
 - Build Windows automatizado com GitHub Actions
+- Suporte a assinatura Authenticode com Microsoft Artifact Signing
 
 ## Atualizações
 
@@ -37,6 +38,30 @@ Arquivos publicados:
 - `ImageSVGStudio-<version>-windows-amd64.exe`
 - `ImageSVGStudio-<version>-windows-amd64.zip`
 - `ImageSVGStudio-<version>-windows-amd64.sha256`
+
+## Assinatura do executável
+
+O workflow está preparado para usar **Microsoft Artifact Signing** antes de publicar uma release. Quando a assinatura estiver configurada, o `.exe` é assinado, validado com `Get-AuthenticodeSignature` e só então publicado no GitHub Releases.
+
+Para habilitar a assinatura, configure no repositório GitHub:
+
+### Secrets
+
+- `AZURE_CLIENT_ID`
+- `AZURE_TENANT_ID`
+- `AZURE_SUBSCRIPTION_ID`
+
+### Variables
+
+- `ARTIFACT_SIGNING_ENDPOINT`
+- `ARTIFACT_SIGNING_ACCOUNT`
+- `ARTIFACT_SIGNING_PROFILE`
+
+A autenticação do workflow usa **OpenID Connect (OIDC)** através de `azure/login`, portanto a App Registration/Managed Identity usada no Azure deve ter uma **Federated Credential** para este repositório e permissão para assinar usando o perfil escolhido.
+
+A identidade também precisa da role **Artifact Signing Certificate Profile Signer** no recurso/perfil utilizado.
+
+Se essas configurações não estiverem completas, o workflow continua gerando o build como artifact interno do GitHub Actions, mas **não publica nem sobrescreve uma GitHub Release com executável não assinado**.
 
 ## Licença
 
