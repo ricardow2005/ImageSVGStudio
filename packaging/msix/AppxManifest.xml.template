@@ -12,9 +12,9 @@
     ProcessorArchitecture="x64" />
 
   <Properties>
-    <DisplayName>ImageSVGStudio</DisplayName>
-    <PublisherDisplayName>OrganizzaTech</PublisherDisplayName>
-    <Description>Import images, detect objects and export real vector SVGs.</Description>
+    <DisplayName>Image SVG Studio</DisplayName>
+    <PublisherDisplayName>__PUBLISHER_DISPLAY_NAME__</PublisherDisplayName>
+    <Description>Desktop image editor for object extraction, masks, layers and SVG export.</Description>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
 
@@ -36,20 +36,20 @@
       Executable="ImageSVGStudio.exe"
       EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements
-        DisplayName="ImageSVGStudio"
-        Description="Import images, detect objects and export real vector SVGs."
+        DisplayName="Image SVG Studio"
+        Description="Desktop image editor for object extraction, masks, layers and SVG export."
         BackgroundColor="transparent"
         Square150x150Logo="Assets\Square150x150Logo.png"
         Square44x44Logo="Assets\Square44x44Logo.png">
         <uap:DefaultTile
           Wide310x150Logo="Assets\Wide310x150Logo.png"
           Square310x310Logo="Assets\Square310x310Logo.png"
-          ShortName="ImageSVGStudio" />
+          ShortName="Image SVG Studio" />
       </uap:VisualElements>
     </Application>
   </Applications>
 
   <Capabilities>
     <rescap:Capability Name="runFullTrust" />
-      </Capabilities>
+  </Capabilities>
 </Package>

@@ -13,7 +13,8 @@ Image SVG Studio é um editor desktop open source para importar imagens, detecta
 - Verificação automática de atualizações no GitHub
 - Changelog da release exibido dentro do aplicativo
 - Build Windows automatizado com GitHub Actions
-- Suporte a assinatura Authenticode com Microsoft Artifact Signing
+- Geração automática de pacote MSIX para Microsoft Store
+- Suporte opcional a assinatura Authenticode para downloads diretos do GitHub
 
 ## Atualizações
 
@@ -29,21 +30,51 @@ Requisitos principais:
 
 Para desenvolvimento no Windows, use `dev.bat`. Para gerar o executável localmente, use `build.bat`.
 
-## Releases
+## Microsoft Store / MSIX
 
-O workflow `.github/workflows/release.yml` gera o executável Windows x64, um ZIP e o SHA-256. Cada nova versão definida em `version/version.go` pode produzir uma GitHub Release com notas automáticas.
+O workflow `.github/workflows/release.yml` agora gera um artifact separado chamado:
 
-Arquivos publicados:
+`ImageSVGStudio-<version>-MicrosoftStore-MSIX`
+
+Ele contém:
+
+- `ImageSVGStudio-<version>-store-x64.msix`
+- `ImageSVGStudio-<version>-store-x64.sha256`
+- `STORE-IDENTITY.txt`
+
+A Microsoft Store assina/reassina pacotes MSIX depois da certificação, portanto **não é necessário comprar um certificado de Code Signing para o pacote enviado à Store**.
+
+Antes de enviar o pacote ao Partner Center, reserve o produto **Image SVG Studio** e copie os três valores exatos em **Product management > Product identity**:
+
+- `Package/Identity/Name`
+- `Package/Identity/Publisher`
+- `Package/Properties/PublisherDisplayName`
+
+Depois configure esses valores no GitHub em **Settings > Secrets and variables > Actions > Variables**:
+
+- `STORE_PACKAGE_NAME`
+- `STORE_PUBLISHER`
+- `STORE_PUBLISHER_DISPLAY_NAME`
+
+Rode novamente o workflow. Quando os três valores estiverem configurados, o MSIX gerado terá a identidade correta para upload no Partner Center.
+
+Se essas variáveis ainda não existirem, o workflow gera um **MSIX de preview** com identidade placeholder apenas para validar o pipeline. Esse pacote não deve ser enviado para a Store.
+
+Veja o passo a passo completo em [`STORE-SUBMISSION.md`](STORE-SUBMISSION.md).
+
+## Releases diretas do GitHub
+
+O workflow também gera o executável Windows x64, ZIP e SHA-256 como artifacts internos:
 
 - `ImageSVGStudio-<version>-windows-amd64.exe`
 - `ImageSVGStudio-<version>-windows-amd64.zip`
 - `ImageSVGStudio-<version>-windows-amd64.sha256`
 
-## Assinatura do executável
+A publicação pública desses arquivos no GitHub Releases continua condicionada a uma assinatura Authenticode válida. Isso é separado do fluxo da Microsoft Store.
 
-O workflow está preparado para usar **Microsoft Artifact Signing** antes de publicar uma release. Quando a assinatura estiver configurada, o `.exe` é assinado, validado com `Get-AuthenticodeSignature` e só então publicado no GitHub Releases.
+## Assinatura opcional do executável direto
 
-Para habilitar a assinatura, configure no repositório GitHub:
+Para downloads diretos do GitHub, o workflow continua preparado para usar Microsoft Artifact Signing quando disponível.
 
 ### Secrets
 
@@ -57,11 +88,7 @@ Para habilitar a assinatura, configure no repositório GitHub:
 - `ARTIFACT_SIGNING_ACCOUNT`
 - `ARTIFACT_SIGNING_PROFILE`
 
-A autenticação do workflow usa **OpenID Connect (OIDC)** através de `azure/login`, portanto a App Registration/Managed Identity usada no Azure deve ter uma **Federated Credential** para este repositório e permissão para assinar usando o perfil escolhido.
-
-A identidade também precisa da role **Artifact Signing Certificate Profile Signer** no recurso/perfil utilizado.
-
-Se essas configurações não estiverem completas, o workflow continua gerando o build como artifact interno do GitHub Actions, mas **não publica nem sobrescreve uma GitHub Release com executável não assinado**.
+Se essa configuração não estiver completa, a Release pública com `.exe` é ignorada, mas o **MSIX para Microsoft Store continua sendo gerado normalmente**.
 
 ## Licença
 

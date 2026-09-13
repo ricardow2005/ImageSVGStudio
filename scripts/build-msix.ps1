@@ -9,7 +9,8 @@ param(
     [string]$OutputPath,
 
     [string]$PackageName = "OrganizzaTech.ImageSVGStudio",
-    [string]$Publisher = "CN=OrganizzaTech"
+    [string]$Publisher = "CN=OrganizzaTech",
+    [string]$PublisherDisplayName = "OrganizzaTech"
 )
 
 $ErrorActionPreference = "Stop"
@@ -42,6 +43,21 @@ function Convert-ToStoreVersion {
     }
 
     return ($normalized -join ".")
+}
+
+function Escape-XmlValue {
+    param([string]$Value)
+    return [System.Security.SecurityElement]::Escape($Value)
+}
+
+if ([string]::IsNullOrWhiteSpace($PackageName)) {
+    throw "PackageName nao pode ser vazio."
+}
+if ([string]::IsNullOrWhiteSpace($Publisher)) {
+    throw "Publisher nao pode ser vazio."
+}
+if ([string]::IsNullOrWhiteSpace($PublisherDisplayName)) {
+    throw "PublisherDisplayName nao pode ser vazio."
 }
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
@@ -79,9 +95,18 @@ try {
     Copy-Item (Join-Path $assetsPath "*") (Join-Path $staging "Assets") -Recurse
 
     $manifest = Get-Content $templatePath -Raw
-    $manifest = $manifest.Replace("__PACKAGE_NAME__", $PackageName)
-    $manifest = $manifest.Replace("__PUBLISHER__", $Publisher)
+    $manifest = $manifest.Replace("__PACKAGE_NAME__", (Escape-XmlValue $PackageName))
+    $manifest = $manifest.Replace("__PUBLISHER__", (Escape-XmlValue $Publisher))
+    $manifest = $manifest.Replace("__PUBLISHER_DISPLAY_NAME__", (Escape-XmlValue $PublisherDisplayName))
     $manifest = $manifest.Replace("__PACKAGE_VERSION__", $packageVersion)
+
+    try {
+        [xml]$null = $manifest
+    }
+    catch {
+        throw "Manifesto MSIX invalido depois de aplicar a identidade da Store: $($_.Exception.Message)"
+    }
+
     Set-Content -Path (Join-Path $staging "AppxManifest.xml") -Value $manifest -Encoding utf8
 
     $outputDir = Split-Path -Parent $OutputPath
@@ -97,9 +122,14 @@ try {
         throw "MakeAppx falhou com exit code $LASTEXITCODE"
     }
 
+    if (-not (Test-Path $OutputPath)) {
+        throw "O pacote MSIX nao foi criado: $OutputPath"
+    }
+
     Write-Host "MSIX criado: $OutputPath"
     Write-Host "Identity.Name: $PackageName"
     Write-Host "Identity.Publisher: $Publisher"
+    Write-Host "PublisherDisplayName: $PublisherDisplayName"
     Write-Host "Version: $packageVersion"
 }
 finally {

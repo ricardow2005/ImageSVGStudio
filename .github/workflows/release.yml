@@ -1,4 +1,4 @@
-name: Windows Build & Release
+name: Windows Build, Store MSIX & Release
 
 on:
   push:
@@ -29,10 +29,13 @@ env:
   ARTIFACT_SIGNING_ENDPOINT: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
   ARTIFACT_SIGNING_ACCOUNT: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
   ARTIFACT_SIGNING_PROFILE: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
+  STORE_PACKAGE_NAME: ${{ vars.STORE_PACKAGE_NAME }}
+  STORE_PUBLISHER: ${{ vars.STORE_PUBLISHER }}
+  STORE_PUBLISHER_DISPLAY_NAME: ${{ vars.STORE_PUBLISHER_DISPLAY_NAME }}
 
 jobs:
   windows:
-    name: Windows x64
+    name: Windows x64 + Microsoft Store MSIX
     runs-on: windows-latest
 
     steps:
@@ -86,6 +89,32 @@ jobs:
           "tag=v$version" >> $env:GITHUB_OUTPUT
           Write-Host "Building Image SVG Studio $version"
 
+      - name: Resolve Microsoft Store identity
+        id: store
+        shell: pwsh
+        run: |
+          $packageName = "$env:STORE_PACKAGE_NAME".Trim()
+          $publisher = "$env:STORE_PUBLISHER".Trim()
+          $publisherDisplayName = "$env:STORE_PUBLISHER_DISPLAY_NAME".Trim()
+
+          $configured = $true
+          if ([string]::IsNullOrWhiteSpace($packageName) -or
+              [string]::IsNullOrWhiteSpace($publisher) -or
+              [string]::IsNullOrWhiteSpace($publisherDisplayName)) {
+            $configured = $false
+            $packageName = "OrganizzaTech.ImageSVGStudio"
+            $publisher = "CN=OrganizzaTech"
+            $publisherDisplayName = "OrganizzaTech"
+            Write-Warning "Microsoft Store identity is not configured yet. A preview MSIX will be generated with placeholder identity values. Do not submit that package to Partner Center."
+          } else {
+            Write-Host "Microsoft Store identity loaded from repository variables."
+          }
+
+          "configured=$($configured.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          "package_name=$packageName" >> $env:GITHUB_OUTPUT
+          "publisher=$publisher" >> $env:GITHUB_OUTPUT
+          "publisher_display_name=$publisherDisplayName" >> $env:GITHUB_OUTPUT
+
       - name: Detect Artifact Signing configuration
         id: signing
         shell: pwsh
@@ -109,10 +138,10 @@ jobs:
 
           if ($enabled) {
             "enabled=true" >> $env:GITHUB_OUTPUT
-            Write-Host "Microsoft Artifact Signing is configured. The Windows executable will be signed."
+            Write-Host "Microsoft Artifact Signing is configured. The direct-download Windows executable will be signed."
           } else {
             "enabled=false" >> $env:GITHUB_OUTPUT
-            Write-Warning "Artifact Signing is not fully configured. The build will run, but no public GitHub Release will be created or updated."
+            Write-Warning "Artifact Signing is not configured. The Microsoft Store MSIX can still be generated because the Store signs MSIX packages after certification. Direct GitHub EXE releases will remain disabled."
           }
 
       - name: Build Windows executable
@@ -136,7 +165,7 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Sign Windows executable with Microsoft Artifact Signing
+      - name: Sign direct-download executable with Microsoft Artifact Signing
         if: steps.signing.outputs.enabled == 'true'
         uses: azure/artifact-signing-action@v2
         with:
@@ -161,7 +190,47 @@ jobs:
             throw "The generated executable does not have a valid Authenticode signature. Status: $($signature.Status)"
           }
 
-      - name: Package Windows release files
+      - name: Build Microsoft Store MSIX
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          New-Item -ItemType Directory -Force -Path dist-store | Out-Null
+          $msix = "dist-store/ImageSVGStudio-$version-store-x64.msix"
+
+          ./scripts/build-msix.ps1 `
+            -ExePath "build/bin/ImageSVGStudio.exe" `
+            -Version $version `
+            -OutputPath $msix `
+            -PackageName '${{ steps.store.outputs.package_name }}' `
+            -Publisher '${{ steps.store.outputs.publisher }}' `
+            -PublisherDisplayName '${{ steps.store.outputs.publisher_display_name }}'
+
+          (Get-FileHash $msix -Algorithm SHA256).Hash.ToLower() |
+            Out-File "dist-store/ImageSVGStudio-$version-store-x64.sha256" -Encoding ascii -NoNewline
+
+          @"
+          Image SVG Studio - Microsoft Store package
+          Version: $version
+          Store identity configured: ${{ steps.store.outputs.configured }}
+          Package/Identity/Name: ${{ steps.store.outputs.package_name }}
+          Package/Identity/Publisher: ${{ steps.store.outputs.publisher }}
+          Package/Properties/PublisherDisplayName: ${{ steps.store.outputs.publisher_display_name }}
+
+          IMPORTANT:
+          - If Store identity configured is false, this package is only a CI preview.
+          - Before Partner Center submission, configure STORE_PACKAGE_NAME, STORE_PUBLISHER and STORE_PUBLISHER_DISPLAY_NAME with the exact values shown in Partner Center > Product management > Product identity.
+          - The Microsoft Store signs/re-signs MSIX packages after certification. This MSIX does not need a CA-trusted signing certificate for Store submission.
+          "@ | Set-Content "dist-store/STORE-IDENTITY.txt" -Encoding utf8
+
+      - name: Upload Microsoft Store MSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ImageSVGStudio-${{ steps.version.outputs.version }}-MicrosoftStore-MSIX
+          path: dist-store/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Package direct-download Windows files
         shell: pwsh
         run: |
           $version = "${{ steps.version.outputs.version }}"
@@ -172,7 +241,7 @@ jobs:
           Compress-Archive -Path $exe -DestinationPath "dist/ImageSVGStudio-$version-windows-amd64.zip" -Force
           (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower() | Out-File "dist/ImageSVGStudio-$version-windows-amd64.sha256" -Encoding ascii -NoNewline
 
-      - name: Upload workflow artifact
+      - name: Upload direct-download build artifact
         uses: actions/upload-artifact@v4
         with:
           name: ImageSVGStudio-${{ steps.version.outputs.version }}-windows-amd64
@@ -180,11 +249,20 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Skip unsigned public release
+      - name: Microsoft Store package status
+        shell: pwsh
+        run: |
+          if ("${{ steps.store.outputs.configured }}" -eq "true") {
+            Write-Host "Store-ready MSIX generated. Upload the .msix from the MicrosoftStore-MSIX artifact to Partner Center."
+          } else {
+            Write-Warning "Preview MSIX generated. Configure the three STORE_* repository variables with the exact Partner Center product identity and rerun before submitting."
+          }
+
+      - name: Skip unsigned public GitHub release
         if: steps.signing.outputs.enabled != 'true'
         shell: pwsh
         run: |
-          Write-Warning "Public release skipped because Microsoft Artifact Signing is not configured. Configure the required GitHub secrets/variables and rerun the workflow."
+          Write-Warning "Direct GitHub Release skipped because Artifact Signing is not configured. Microsoft Store distribution is unaffected: use the MSIX artifact in Partner Center."
 
       - name: Create or update signed GitHub Release
         if: steps.signing.outputs.enabled == 'true' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_release))
