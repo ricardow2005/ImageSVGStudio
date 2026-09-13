@@ -1,70 +1,43 @@
 # Image SVG Studio
 
-Image SVG Studio is an open-source Windows desktop editor for importing raster images, extracting visual objects, refining masks and layers, and exporting faithful SVG/PNG results.
+Image SVG Studio é um editor desktop open source para importar imagens, detectar e recortar objetos, refinar máscaras e exportar PNG/SVG com um fluxo visual inspirado em editores gráficos.
 
-Built with **Go**, **Wails**, **Vite**, **Fabric.js** and **ImageTracerJS**.
+## Recursos
 
-## Highlights
+- Importação de PNG, JPG, WebP e BMP
+- Detecção automática de objetos
+- Recortes manuais e máscaras editáveis
+- Editor de camadas com pincel, borracha, restauração, movimentação e ordenação
+- Exportação fiel em SVG e vetorização opcional em paths
+- Cópia de PNG/SVG para a área de transferência
+- Verificação automática de atualizações no GitHub
+- Changelog da release exibido dentro do aplicativo
+- Build Windows automatizado com GitHub Actions
 
-- Import PNG, JPG, WebP and BMP images.
-- Detect visual objects automatically.
-- Create manual rectangular and polygon selections.
-- Edit each crop as an independent group of layers.
-- Photoshop-inspired layer editor with visibility, lock, ordering and opacity controls.
-- Brush, eraser, restore, paint, blend and rectangular cut tools.
-- Copy selected objects to the clipboard as PNG/SVG.
-- Export faithful SVG without forcing raster content into vector paths.
-- Optional SVG path vectorization.
-- Zoom with `Ctrl + mouse wheel` and pan with mouse wheel/right-button drag.
-- Native Windows executable generated with Wails.
+## Atualizações
 
-## Development
+Ao abrir o aplicativo, o Image SVG Studio consulta a release mais recente publicada no GitHub. Também é possível abrir **Configurações** e clicar em **Verificar atualização**. Quando existe uma versão nova, o aplicativo mostra as notas da release e permite abrir a página oficial do GitHub para fazer o download.
 
-Requirements:
+## Desenvolvimento
+
+Requisitos principais:
 
 - Go 1.24+
 - Node.js 22+
-- Wails CLI 2.10.2
+- Wails v2.10.2
 
-Run in development mode:
-
-```bat
-dev.bat
-```
-
-Build Windows x64 locally:
-
-```bat
-build.bat
-```
-
-The executable is generated at:
-
-```text
-build\bin\ImageSVGStudio.exe
-```
+Para desenvolvimento no Windows, use `dev.bat`. Para gerar o executável localmente, use `build.bat`.
 
 ## Releases
 
-GitHub Actions builds the Windows x64 executable automatically.
+O workflow `.github/workflows/release.yml` gera o executável Windows x64, um ZIP e o SHA-256. Cada nova versão definida em `version/version.go` pode produzir uma GitHub Release com notas automáticas.
 
-To publish a release, create and push a version tag such as:
-
-```bash
-git tag v0.2.10
-git push origin v0.2.10
-```
-
-The release workflow attaches:
+Arquivos publicados:
 
 - `ImageSVGStudio-<version>-windows-amd64.exe`
 - `ImageSVGStudio-<version>-windows-amd64.zip`
 - `ImageSVGStudio-<version>-windows-amd64.sha256`
 
-You can also run the workflow manually from the **Actions** tab and choose whether to create a release.
+## Licença
 
-## License
-
-Released under the [MIT License](LICENSE).
-
-Copyright © 2026 Ricardo Alberto Walter.
+Distribuído sob a licença MIT. Consulte `LICENSE`.
