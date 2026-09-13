@@ -1,19 +1,18 @@
-name: Bootstrap Source and Initial Release
+name: Bootstrap public source and Windows release
 
 on:
   push:
     branches: ["main"]
     paths:
-      - "project-source.b64.part*"
-      - ".github/workflows/bootstrap.yml"
+      - "bootstrap.ready"
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  bootstrap:
-    name: Publish source and Windows release
+  publish:
+    name: Publish source and Windows v0.2.10 release
     runs-on: windows-latest
 
     steps:
@@ -22,12 +21,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Rebuild complete source tree
+      - name: Reconstruct public source archive
         shell: pwsh
         run: |
-          $parts = Get-ChildItem -Path . -Filter "project-source.b64.part*" | Sort-Object Name
+          $parts = Get-ChildItem -Path . -Filter "payload.part*" | Sort-Object Name
           if (!$parts -or $parts.Count -ne 13) {
-            throw "Expected 13 source chunks, found $($parts.Count)."
+            throw "Expected 13 payload chunks, found $($parts.Count)."
           }
 
           $builder = New-Object System.Text.StringBuilder
@@ -35,27 +34,38 @@ jobs:
             [void]$builder.Append((Get-Content $part.FullName -Raw).Trim())
           }
 
-          $archive = Join-Path $env:RUNNER_TEMP "ImageSVGStudio-source.zip"
+          $archive = Join-Path $env:RUNNER_TEMP "ImageSVGStudio-v0.2.10-public-source.zip"
           [IO.File]::WriteAllBytes($archive, [Convert]::FromBase64String($builder.ToString()))
+
+          $actualHash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLower()
+          $expectedHash = "fe4ada36c5cfb917b8f7f1f86ed7a8f4f0255f323f78c335b0d9965f8d74600e"
+          if ($actualHash -ne $expectedHash) {
+            throw "Source archive hash mismatch. Expected $expectedHash, got $actualHash."
+          }
 
           $expanded = Join-Path $env:RUNNER_TEMP "ImageSVGStudio-expanded"
           $prepared = Join-Path $env:RUNNER_TEMP "ImageSVGStudio-prepared"
           Remove-Item $expanded -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item $prepared -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $expanded | Out-Null
+          New-Item -ItemType Directory -Force -Path $prepared | Out-Null
           Expand-Archive -Path $archive -DestinationPath $expanded -Force
 
-          $nested = Join-Path $expanded "ImageSVGStudio-v0.2.10"
-          $sourceRoot = if (Test-Path $nested) { $nested } else { $expanded }
-          New-Item -ItemType Directory -Force -Path $prepared | Out-Null
-          Get-ChildItem -Path $sourceRoot -Force | ForEach-Object {
+          Get-ChildItem -Path $expanded -Force | ForEach-Object {
             Copy-Item $_.FullName -Destination $prepared -Recurse -Force
           }
 
           if (!(Test-Path (Join-Path $prepared "main.go"))) {
             throw "Prepared source tree is invalid: main.go was not found."
           }
+          if (!(Test-Path (Join-Path $prepared "LICENSE"))) {
+            throw "Prepared source tree is invalid: MIT LICENSE was not found."
+          }
+          if (!(Test-Path (Join-Path $prepared ".github/workflows/release.yml"))) {
+            throw "Prepared source tree is invalid: release workflow was not found."
+          }
 
-      - name: Commit complete source tree
+      - name: Commit complete public source tree
         shell: pwsh
         run: |
           git config user.name "github-actions[bot]"
@@ -116,7 +126,13 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: frontend
-        run: npm install
+        shell: pwsh
+        run: |
+          if (Test-Path package-lock.json) {
+            npm ci
+          } else {
+            npm install
+          }
 
       - name: Install Wails CLI
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.10.2
@@ -136,7 +152,7 @@ jobs:
           Compress-Archive -Path $exe -DestinationPath "dist/ImageSVGStudio-$version-windows-amd64.zip" -Force
           (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower() | Out-File "dist/ImageSVGStudio-$version-windows-amd64.sha256" -Encoding ascii -NoNewline
 
-      - name: Upload workflow artifact
+      - name: Upload Windows build artifact
         uses: actions/upload-artifact@v4
         with:
           name: ImageSVGStudio-0.2.10-windows-amd64
