@@ -6,13 +6,14 @@ on:
     paths:
       - ".bootstrap/**"
       - ".github/workflows/bootstrap.yml"
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   bootstrap:
-    name: Publish complete source and v0.2.10 Windows release
+    name: Publish source and Windows release
     runs-on: windows-latest
 
     steps:
@@ -26,14 +27,24 @@ jobs:
         run: |
           $archive = ".bootstrap/ImageSVGStudio-v0.2.10-source.zip"
           $target = ".bootstrap/extracted"
+
+          if (!(Test-Path $archive)) {
+            throw "Source archive not found: $archive"
+          }
+
+          Remove-Item $target -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path $target | Out-Null
           Expand-Archive -Path $archive -DestinationPath $target -Force
-          Get-ChildItem $target -Force | ForEach-Object {
+
+          $nested = Join-Path $target "ImageSVGStudio-v0.2.10"
+          $sourceRoot = if (Test-Path $nested) { $nested } else { $target }
+
+          Get-ChildItem -Path $sourceRoot -Force | ForEach-Object {
             Copy-Item $_.FullName -Destination . -Recurse -Force
           }
+
           Remove-Item ".bootstrap" -Recurse -Force
           Remove-Item ".github/workflows/bootstrap.yml" -Force -ErrorAction SilentlyContinue
-          Remove-Item ".github/workflows/bootstrap-source.yml" -Force -ErrorAction SilentlyContinue
           Get-ChildItem -Path . -Filter "minsrc*.b64.part*" -Force -ErrorAction SilentlyContinue | Remove-Item -Force
           Get-ChildItem -Path . -Filter "project-source.b64.part*" -Force -ErrorAction SilentlyContinue | Remove-Item -Force
           Remove-Item "project-source.zip" -Force -ErrorAction SilentlyContinue
@@ -75,9 +86,11 @@ jobs:
         shell: pwsh
         run: |
           $version = "0.2.10"
-          $commit = "${{ github.sha }}".Substring(0, 7)
+          $commit = (git rev-parse --short HEAD).Trim()
           $date = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
+
           wails build -platform windows/amd64 -clean -ldflags "-X image-svg-studio/version.Version=$version -X image-svg-studio/version.Commit=$commit -X image-svg-studio/version.BuildDate=$date"
+
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           $exe = "dist/ImageSVGStudio-$version-windows-amd64.exe"
           Copy-Item build/bin/ImageSVGStudio.exe $exe
