@@ -38,6 +38,13 @@ jobs:
               header = f"blob {len(data)}\0".encode("ascii")
               return hashlib.sha1(header + data).hexdigest()
 
+          def find_chunk(haystack: str, expected_sha: str, width: int = 6000):
+              for start in range(0, len(haystack) - width + 1):
+                  candidate = haystack[start:start + width]
+                  if git_blob_sha(candidate) == expected_sha:
+                      return candidate, start
+              return None, None
+
           parts = {
               path.name: path.read_text(encoding="utf-8").strip()
               for path in Path(".").glob("payload.part*")
@@ -53,23 +60,24 @@ jobs:
           if missing:
               raise SystemExit(f"Missing bootstrap payload files: {missing}")
 
-          # part09 contains the two 6000-character chunks that originally belonged
-          # to part03 and part09. Identify them by their Git blob SHA.
-          combined = parts["payload.part09"]
-          if len(combined) != 12000:
-              raise SystemExit(f"Unexpected payload.part09 length: {len(combined)}")
+          for name in sorted(parts):
+              print(name, len(parts[name]), git_blob_sha(parts[name]))
 
-          halves = [combined[:6000], combined[6000:]]
+          # The first upload accidentally merged/misaligned a few chunks. Search the
+          # complete payload pool for intact 6000-character windows by their Git SHA.
+          raw_pool = "".join(parts[name] for name in sorted(parts))
           expected_part03 = "4801f09aeab83ae81e2c6672a9a2ef987841e234"
           expected_part09 = "0caf9899d484285cdf536529c38e5ad267389cb9"
 
-          part03 = next((item for item in halves if git_blob_sha(item) == expected_part03), None)
-          part09 = next((item for item in halves if git_blob_sha(item) == expected_part09), None)
+          part03, offset03 = find_chunk(raw_pool, expected_part03)
+          part09, offset09 = find_chunk(raw_pool, expected_part09)
+          print("Recovered part03 offset:", offset03)
+          print("Recovered part09 offset:", offset09)
           if part03 is None or part09 is None:
-              raise SystemExit("Could not recover payload part03/part09 from the merged chunk.")
+              raise SystemExit("Could not locate intact payload part03/part09 in the uploaded payload pool.")
 
-          # part08 lost exactly one Base64 character during the first upload.
-          # Recover it deterministically against the expected Git blob SHA.
+          # part08 lost exactly one Base64 character. Recover it deterministically
+          # against the expected Git blob SHA.
           broken08 = parts["payload.part08"]
           expected_part08 = "ad6cc62c121c573def4ad8b532bdd712051addf1"
           repaired08 = None
