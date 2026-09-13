@@ -35,39 +35,69 @@ jobs:
             [void]$builder.Append((Get-Content $part.FullName -Raw).Trim())
           }
 
-          $bytes = [Convert]::FromBase64String($builder.ToString())
-          [IO.File]::WriteAllBytes("project-source.zip", $bytes)
+          $archive = Join-Path $env:RUNNER_TEMP "ImageSVGStudio-source.zip"
+          [IO.File]::WriteAllBytes($archive, [Convert]::FromBase64String($builder.ToString()))
 
-          $target = ".bootstrap-extracted"
-          Remove-Item $target -Recurse -Force -ErrorAction SilentlyContinue
-          Expand-Archive -Path "project-source.zip" -DestinationPath $target -Force
+          $expanded = Join-Path $env:RUNNER_TEMP "ImageSVGStudio-expanded"
+          $prepared = Join-Path $env:RUNNER_TEMP "ImageSVGStudio-prepared"
+          Remove-Item $expanded -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item $prepared -Recurse -Force -ErrorAction SilentlyContinue
+          Expand-Archive -Path $archive -DestinationPath $expanded -Force
 
-          $nested = Join-Path $target "ImageSVGStudio-v0.2.10"
-          $sourceRoot = if (Test-Path $nested) { $nested } else { $target }
-
+          $nested = Join-Path $expanded "ImageSVGStudio-v0.2.10"
+          $sourceRoot = if (Test-Path $nested) { $nested } else { $expanded }
+          New-Item -ItemType Directory -Force -Path $prepared | Out-Null
           Get-ChildItem -Path $sourceRoot -Force | ForEach-Object {
-            Copy-Item $_.FullName -Destination . -Recurse -Force
+            Copy-Item $_.FullName -Destination $prepared -Recurse -Force
           }
 
-          Remove-Item $target -Recurse -Force
-          Remove-Item ".bootstrap" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item ".github/workflows/bootstrap.yml" -Force -ErrorAction SilentlyContinue
-          Remove-Item ".github/workflows/bootstrap-source.yml" -Force -ErrorAction SilentlyContinue
-          Get-ChildItem -Filter "project-source.b64.part*" -Force | Remove-Item -Force
-          Get-ChildItem -Filter "minsrc*.b64.part*" -Force -ErrorAction SilentlyContinue | Remove-Item -Force
-          Get-ChildItem -Filter "source.b64.part*" -Force -ErrorAction SilentlyContinue | Remove-Item -Force
-          Remove-Item "project-source.zip" -Force -ErrorAction SilentlyContinue
+          if (!(Test-Path (Join-Path $prepared "main.go"))) {
+            throw "Prepared source tree is invalid: main.go was not found."
+          }
 
       - name: Commit complete source tree
         shell: pwsh
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git diff --cached --quiet
-          if ($LASTEXITCODE -ne 0) {
+          $prepared = Join-Path $env:RUNNER_TEMP "ImageSVGStudio-prepared"
+          $published = $false
+
+          for ($attempt = 1; $attempt -le 8; $attempt++) {
+            Write-Host "Publish attempt $attempt"
+            git fetch origin main
+            if ($LASTEXITCODE -ne 0) { Start-Sleep -Seconds 2; continue }
+            git reset --hard origin/main
+            if ($LASTEXITCODE -ne 0) { Start-Sleep -Seconds 2; continue }
+
+            Get-ChildItem -Path . -Force | Where-Object { $_.Name -ne ".git" } | Remove-Item -Recurse -Force
+            Get-ChildItem -Path $prepared -Force | ForEach-Object {
+              Copy-Item $_.FullName -Destination . -Recurse -Force
+            }
+
+            git add -A
+            git diff --cached --quiet
+            if ($LASTEXITCODE -eq 0) {
+              Write-Host "Source tree is already published."
+              $published = $true
+              break
+            }
+
             git commit -m "feat: publish Image SVG Studio v0.2.10 source"
+            if ($LASTEXITCODE -ne 0) { Start-Sleep -Seconds 2; continue }
+
             git push origin HEAD:main
+            if ($LASTEXITCODE -eq 0) {
+              $published = $true
+              break
+            }
+
+            Write-Host "Remote changed during publish; retrying on top of latest main..."
+            Start-Sleep -Seconds 2
+          }
+
+          if (!$published) {
+            throw "Could not publish the source tree after multiple retries."
           }
 
       - name: Setup Go
