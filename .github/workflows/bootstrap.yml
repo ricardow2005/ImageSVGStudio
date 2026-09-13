@@ -1,10 +1,10 @@
-name: Bootstrap public source and Windows release
+name: Bootstrap public source
 
 on:
   push:
     branches: ["main"]
     paths:
-      - "bootstrap.ready"
+      - ".github/workflows/bootstrap.yml"
   workflow_dispatch:
 
 permissions:
@@ -12,163 +12,150 @@ permissions:
 
 jobs:
   publish:
-    name: Publish source and Windows v0.2.10 release
-    runs-on: windows-latest
+    name: Publish clean source tree
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Reconstruct public source archive
-        shell: pwsh
+      - name: Reconstruct source archive
+        shell: bash
         run: |
-          $parts = Get-ChildItem -Path . -Filter "payload.part*" | Sort-Object Name
-          if (!$parts -or $parts.Count -ne 13) {
-            throw "Expected 13 payload chunks, found $($parts.Count)."
+          python - <<'PY'
+          from pathlib import Path
+          import base64
+          import hashlib
+          import shutil
+          import zipfile
+
+          BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+
+          def git_blob_sha(text: str) -> str:
+              data = text.encode("ascii")
+              header = f"blob {len(data)}\0".encode("ascii")
+              return hashlib.sha1(header + data).hexdigest()
+
+          parts = {
+              path.name: path.read_text(encoding="utf-8").strip()
+              for path in Path(".").glob("payload.part*")
           }
 
-          $builder = New-Object System.Text.StringBuilder
-          foreach ($part in $parts) {
-            [void]$builder.Append((Get-Content $part.FullName -Raw).Trim())
+          required = {
+              "payload.part00", "payload.part01", "payload.part02",
+              "payload.part04", "payload.part05", "payload.part06",
+              "payload.part07", "payload.part08", "payload.part09",
+              "payload.part10", "payload.part11", "payload.part12",
           }
+          missing = sorted(required.difference(parts))
+          if missing:
+              raise SystemExit(f"Missing bootstrap payload files: {missing}")
 
-          $archive = Join-Path $env:RUNNER_TEMP "ImageSVGStudio-v0.2.10-public-source.zip"
-          [IO.File]::WriteAllBytes($archive, [Convert]::FromBase64String($builder.ToString()))
+          # part09 contains the two 6000-character chunks that originally belonged
+          # to part03 and part09. Identify them by their Git blob SHA.
+          combined = parts["payload.part09"]
+          if len(combined) != 12000:
+              raise SystemExit(f"Unexpected payload.part09 length: {len(combined)}")
 
-          $actualHash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLower()
-          $expectedHash = "fe4ada36c5cfb917b8f7f1f86ed7a8f4f0255f323f78c335b0d9965f8d74600e"
-          if ($actualHash -ne $expectedHash) {
-            throw "Source archive hash mismatch. Expected $expectedHash, got $actualHash."
-          }
+          halves = [combined[:6000], combined[6000:]]
+          expected_part03 = "4801f09aeab83ae81e2c6672a9a2ef987841e234"
+          expected_part09 = "0caf9899d484285cdf536529c38e5ad267389cb9"
 
-          $expanded = Join-Path $env:RUNNER_TEMP "ImageSVGStudio-expanded"
-          $prepared = Join-Path $env:RUNNER_TEMP "ImageSVGStudio-prepared"
-          Remove-Item $expanded -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item $prepared -Recurse -Force -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Force -Path $expanded | Out-Null
-          New-Item -ItemType Directory -Force -Path $prepared | Out-Null
-          Expand-Archive -Path $archive -DestinationPath $expanded -Force
+          part03 = next((item for item in halves if git_blob_sha(item) == expected_part03), None)
+          part09 = next((item for item in halves if git_blob_sha(item) == expected_part09), None)
+          if part03 is None or part09 is None:
+              raise SystemExit("Could not recover payload part03/part09 from the merged chunk.")
 
-          Get-ChildItem -Path $expanded -Force | ForEach-Object {
-            Copy-Item $_.FullName -Destination $prepared -Recurse -Force
-          }
+          # part08 lost exactly one Base64 character during the first upload.
+          # Recover it deterministically against the expected Git blob SHA.
+          broken08 = parts["payload.part08"]
+          expected_part08 = "ad6cc62c121c573def4ad8b532bdd712051addf1"
+          repaired08 = None
 
-          if (!(Test-Path (Join-Path $prepared "main.go"))) {
-            throw "Prepared source tree is invalid: main.go was not found."
-          }
-          if (!(Test-Path (Join-Path $prepared "LICENSE"))) {
-            throw "Prepared source tree is invalid: MIT LICENSE was not found."
-          }
-          if (!(Test-Path (Join-Path $prepared ".github/workflows/release.yml"))) {
-            throw "Prepared source tree is invalid: release workflow was not found."
-          }
+          if git_blob_sha(broken08) == expected_part08:
+              repaired08 = broken08
+          else:
+              if len(broken08) != 5999:
+                  raise SystemExit(f"Unexpected payload.part08 length: {len(broken08)}")
+              for position in range(len(broken08) + 1):
+                  prefix = broken08[:position]
+                  suffix = broken08[position:]
+                  for character in BASE64_ALPHABET:
+                      candidate = prefix + character + suffix
+                      if git_blob_sha(candidate) == expected_part08:
+                          repaired08 = candidate
+                          print(f"Recovered payload.part08 at position {position} with {character!r}")
+                          break
+                  if repaired08 is not None:
+                      break
 
-      - name: Commit complete public source tree
-        shell: pwsh
+          if repaired08 is None:
+              raise SystemExit("Could not repair payload.part08.")
+
+          ordered = [
+              parts["payload.part00"],
+              parts["payload.part01"],
+              parts["payload.part02"],
+              part03,
+              parts["payload.part04"],
+              parts["payload.part05"],
+              parts["payload.part06"],
+              parts["payload.part07"],
+              repaired08,
+              part09,
+              parts["payload.part10"],
+              parts["payload.part11"],
+              parts["payload.part12"],
+          ]
+
+          encoded = "".join(ordered)
+          archive_bytes = base64.b64decode(encoded, validate=True)
+          actual_hash = hashlib.sha256(archive_bytes).hexdigest()
+          expected_hash = "fe4ada36c5cfb917b8f7f1f86ed7a8f4f0255f323f78c335b0d9965f8d74600e"
+          if actual_hash != expected_hash:
+              raise SystemExit(
+                  f"Source archive hash mismatch: expected {expected_hash}, got {actual_hash}"
+              )
+
+          archive = Path("/tmp/ImageSVGStudio-v0.2.10-source.zip")
+          prepared = Path("/tmp/ImageSVGStudio-v0.2.10-source")
+          archive.write_bytes(archive_bytes)
+          shutil.rmtree(prepared, ignore_errors=True)
+          prepared.mkdir(parents=True, exist_ok=True)
+
+          with zipfile.ZipFile(archive) as package:
+              package.extractall(prepared)
+
+          for required_file in (
+              "main.go",
+              "LICENSE",
+              ".github/workflows/release.yml",
+          ):
+              if not (prepared / required_file).exists():
+                  raise SystemExit(f"Prepared source tree is missing {required_file}")
+
+          print(f"Source archive verified: {actual_hash}")
+          PY
+
+      - name: Publish clean source tree
+        shell: bash
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          $prepared = Join-Path $env:RUNNER_TEMP "ImageSVGStudio-prepared"
-          $published = $false
 
-          for ($attempt = 1; $attempt -le 8; $attempt++) {
-            Write-Host "Publish attempt $attempt"
-            git fetch origin main
-            if ($LASTEXITCODE -ne 0) { Start-Sleep -Seconds 2; continue }
-            git reset --hard origin/main
-            if ($LASTEXITCODE -ne 0) { Start-Sleep -Seconds 2; continue }
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -a /tmp/ImageSVGStudio-v0.2.10-source/. .
 
-            Get-ChildItem -Path . -Force | Where-Object { $_.Name -ne ".git" } | Remove-Item -Recurse -Force
-            Get-ChildItem -Path $prepared -Force | ForEach-Object {
-              Copy-Item $_.FullName -Destination . -Recurse -Force
-            }
+          git add -A
+          git commit -m "feat: publish Image SVG Studio v0.2.10 source"
+          git push origin HEAD:main
 
-            git add -A
-            git diff --cached --quiet
-            if ($LASTEXITCODE -eq 0) {
-              Write-Host "Source tree is already published."
-              $published = $true
-              break
-            }
-
-            git commit -m "feat: publish Image SVG Studio v0.2.10 source"
-            if ($LASTEXITCODE -ne 0) { Start-Sleep -Seconds 2; continue }
-
-            git push origin HEAD:main
-            if ($LASTEXITCODE -eq 0) {
-              $published = $true
-              break
-            }
-
-            Write-Host "Remote changed during publish; retrying on top of latest main..."
-            Start-Sleep -Seconds 2
-          }
-
-          if (!$published) {
-            throw "Could not publish the source tree after multiple retries."
-          }
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.24.x"
-          cache: true
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - name: Download Go modules
-        run: go mod download
-
-      - name: Install frontend dependencies
-        working-directory: frontend
-        shell: pwsh
+      - name: Create v0.2.10 tag
+        shell: bash
         run: |
-          if (Test-Path package-lock.json) {
-            npm ci
-          } else {
-            npm install
-          }
-
-      - name: Install Wails CLI
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.10.2
-
-      - name: Build Windows executable
-        shell: pwsh
-        run: |
-          $version = "0.2.10"
-          $commit = (git rev-parse --short HEAD).Trim()
-          $date = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
-
-          wails build -platform windows/amd64 -clean -ldflags "-X image-svg-studio/version.Version=$version -X image-svg-studio/version.Commit=$commit -X image-svg-studio/version.BuildDate=$date"
-
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
-          $exe = "dist/ImageSVGStudio-$version-windows-amd64.exe"
-          Copy-Item build/bin/ImageSVGStudio.exe $exe
-          Compress-Archive -Path $exe -DestinationPath "dist/ImageSVGStudio-$version-windows-amd64.zip" -Force
-          (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower() | Out-File "dist/ImageSVGStudio-$version-windows-amd64.sha256" -Encoding ascii -NoNewline
-
-      - name: Upload Windows build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ImageSVGStudio-0.2.10-windows-amd64
-          path: dist/*
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Create GitHub Release v0.2.10
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $tag = "v0.2.10"
-          gh release view $tag *> $null
-          if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag dist/* --clobber
-          } else {
-            gh release create $tag dist/* --title "Image SVG Studio v0.2.10" --generate-notes --target main
-          }
+          set -euo pipefail
+          git tag -f -a v0.2.10 -m "Image SVG Studio v0.2.10"
+          git push origin refs/tags/v0.2.10 --force
