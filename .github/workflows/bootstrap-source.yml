@@ -4,7 +4,7 @@ on:
   push:
     branches: ["main"]
     paths:
-      - "minsrc2.b64.part*"
+      - "minsrc.b64.part*"
   workflow_dispatch:
 
 permissions:
@@ -21,7 +21,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat minsrc2.b64.part* | tr -d '\n\r' | base64 -d > minsrc.zip
+          cat minsrc.b64.part* | tr -d '\n\r' | base64 -d > minsrc.zip
           unzip -t minsrc.zip
           rm -rf .bootstrap-tmp
           mkdir .bootstrap-tmp
