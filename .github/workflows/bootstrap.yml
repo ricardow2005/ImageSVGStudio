@@ -21,131 +21,49 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Reconstruct source archive
+      - name: Extract source package
         shell: bash
         run: |
-          python - <<'PY'
-          from pathlib import Path
-          import base64
-          import hashlib
-          import shutil
-          import zipfile
+          set -euo pipefail
+          ARCHIVE=".bootstrap/ImageSVGStudio-v0.2.10-source.zip"
+          PREPARED="/tmp/ImageSVGStudio-v0.2.10-source"
+          EXPANDED="/tmp/ImageSVGStudio-v0.2.10-expanded"
 
-          BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+          test -f "$ARCHIVE"
+          unzip -t "$ARCHIVE"
+          rm -rf "$PREPARED" "$EXPANDED"
+          mkdir -p "$PREPARED" "$EXPANDED"
+          unzip -q "$ARCHIVE" -d "$EXPANDED"
 
-          def git_blob_sha(text: str) -> str:
-              data = text.encode("ascii")
-              header = f"blob {len(data)}\0".encode("ascii")
-              return hashlib.sha1(header + data).hexdigest()
+          if [ -f "$EXPANDED/main.go" ]; then
+            SOURCE_ROOT="$EXPANDED"
+          elif [ -f "$EXPANDED/ImageSVGStudio-v0.2.10/main.go" ]; then
+            SOURCE_ROOT="$EXPANDED/ImageSVGStudio-v0.2.10"
+          else
+            echo "Archive contents:"
+            find "$EXPANDED" -maxdepth 3 -type f -print
+            echo "main.go not found in source archive."
+            exit 1
+          fi
 
-          def find_chunk(haystack: str, expected_sha: str, width: int = 6000):
-              for start in range(0, len(haystack) - width + 1):
-                  candidate = haystack[start:start + width]
-                  if git_blob_sha(candidate) == expected_sha:
-                      return candidate, start
-              return None, None
+          cp -a "$SOURCE_ROOT"/. "$PREPARED"/
+          test -f "$PREPARED/main.go"
+          test -f "$PREPARED/go.mod"
+          test -f "$PREPARED/frontend/package.json"
 
-          parts = {
-              path.name: path.read_text(encoding="utf-8").strip()
-              for path in Path(".").glob("payload.part*")
-          }
+          # Keep the public MIT license and the final release workflow that live
+          # in the bootstrap repository while replacing the temporary staging tree.
+          cp LICENSE "$PREPARED/LICENSE"
+          mkdir -p "$PREPARED/.github/workflows"
+          cp .github/workflows/release.yml "$PREPARED/.github/workflows/release.yml"
 
-          required = {
-              "payload.part00", "payload.part01", "payload.part02",
-              "payload.part04", "payload.part05", "payload.part06",
-              "payload.part07", "payload.part08", "payload.part09",
-              "payload.part10", "payload.part11", "payload.part12",
-          }
-          missing = sorted(required.difference(parts))
-          if missing:
-              raise SystemExit(f"Missing bootstrap payload files: {missing}")
+          # Bootstrap/staging files must never survive into the public source tree.
+          rm -f "$PREPARED/.github/workflows/bootstrap.yml" "$PREPARED/.github/workflows/bootstrap-source.yml"
+          rm -rf "$PREPARED/.bootstrap"
+          find "$PREPARED" -maxdepth 1 \( -name 'payload.part*' -o -name 'project-source.b64.part*' -o -name 'source.b64.part*' -o -name 'minsrc*.b64.part*' -o -name 'bootstrap.ready' -o -name 'project-source.zip' \) -delete
 
-          for name in sorted(parts):
-              print(name, len(parts[name]), git_blob_sha(parts[name]))
-
-          # The first upload accidentally merged/misaligned a few chunks. Search the
-          # complete payload pool for intact 6000-character windows by their Git SHA.
-          raw_pool = "".join(parts[name] for name in sorted(parts))
-          expected_part03 = "4801f09aeab83ae81e2c6672a9a2ef987841e234"
-          expected_part09 = "0caf9899d484285cdf536529c38e5ad267389cb9"
-
-          part03, offset03 = find_chunk(raw_pool, expected_part03)
-          part09, offset09 = find_chunk(raw_pool, expected_part09)
-          print("Recovered part03 offset:", offset03)
-          print("Recovered part09 offset:", offset09)
-          if part03 is None or part09 is None:
-              raise SystemExit("Could not locate intact payload part03/part09 in the uploaded payload pool.")
-
-          # part08 lost exactly one Base64 character. Recover it deterministically
-          # against the expected Git blob SHA.
-          broken08 = parts["payload.part08"]
-          expected_part08 = "ad6cc62c121c573def4ad8b532bdd712051addf1"
-          repaired08 = None
-
-          if git_blob_sha(broken08) == expected_part08:
-              repaired08 = broken08
-          else:
-              if len(broken08) != 5999:
-                  raise SystemExit(f"Unexpected payload.part08 length: {len(broken08)}")
-              for position in range(len(broken08) + 1):
-                  prefix = broken08[:position]
-                  suffix = broken08[position:]
-                  for character in BASE64_ALPHABET:
-                      candidate = prefix + character + suffix
-                      if git_blob_sha(candidate) == expected_part08:
-                          repaired08 = candidate
-                          print(f"Recovered payload.part08 at position {position} with {character!r}")
-                          break
-                  if repaired08 is not None:
-                      break
-
-          if repaired08 is None:
-              raise SystemExit("Could not repair payload.part08.")
-
-          ordered = [
-              parts["payload.part00"],
-              parts["payload.part01"],
-              parts["payload.part02"],
-              part03,
-              parts["payload.part04"],
-              parts["payload.part05"],
-              parts["payload.part06"],
-              parts["payload.part07"],
-              repaired08,
-              part09,
-              parts["payload.part10"],
-              parts["payload.part11"],
-              parts["payload.part12"],
-          ]
-
-          encoded = "".join(ordered)
-          archive_bytes = base64.b64decode(encoded, validate=True)
-          actual_hash = hashlib.sha256(archive_bytes).hexdigest()
-          expected_hash = "fe4ada36c5cfb917b8f7f1f86ed7a8f4f0255f323f78c335b0d9965f8d74600e"
-          if actual_hash != expected_hash:
-              raise SystemExit(
-                  f"Source archive hash mismatch: expected {expected_hash}, got {actual_hash}"
-              )
-
-          archive = Path("/tmp/ImageSVGStudio-v0.2.10-source.zip")
-          prepared = Path("/tmp/ImageSVGStudio-v0.2.10-source")
-          archive.write_bytes(archive_bytes)
-          shutil.rmtree(prepared, ignore_errors=True)
-          prepared.mkdir(parents=True, exist_ok=True)
-
-          with zipfile.ZipFile(archive) as package:
-              package.extractall(prepared)
-
-          for required_file in (
-              "main.go",
-              "LICENSE",
-              ".github/workflows/release.yml",
-          ):
-              if not (prepared / required_file).exists():
-                  raise SystemExit(f"Prepared source tree is missing {required_file}")
-
-          print(f"Source archive verified: {actual_hash}")
-          PY
+          echo "Prepared source files:"
+          find "$PREPARED" -maxdepth 2 -type f -print | sort
 
       - name: Publish clean source tree
         shell: bash
