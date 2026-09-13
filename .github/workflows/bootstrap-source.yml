@@ -4,7 +4,7 @@ on:
   push:
     branches: ["main"]
     paths:
-      - "project-source.zip"
+      - "project-source.b64.part*"
   workflow_dispatch:
 
 permissions:
@@ -17,15 +17,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Extract project source
+      - name: Rebuild and extract project source
         shell: bash
         run: |
           set -euo pipefail
+          cat project-source.b64.part* | tr -d '\n\r' | base64 -d > project-source.zip
+          unzip -t project-source.zip
           rm -rf .bootstrap-tmp
           mkdir .bootstrap-tmp
           unzip -q project-source.zip -d .bootstrap-tmp
           cp -a .bootstrap-tmp/ImageSVGStudio-v0.2.10/. .
-          rm -rf .bootstrap-tmp project-source.zip
+          rm -rf .bootstrap-tmp project-source.zip project-source.b64.part*
           rm -f .github/workflows/bootstrap-source.yml
 
       - name: Commit source tree
