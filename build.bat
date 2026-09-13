@@ -6,7 +6,7 @@ title Image SVG Studio - Windows Build
 
 set "APP_NAME=ImageSVGStudio"
 set "WAILS_VERSION=v2.10.2"
-set "APP_VERSION=0.2.10"
+set "APP_VERSION=0.2.11"
 set "BUILD_COMMIT=local"
 set "BUILD_DATE=unknown"
 set "WAILS_CMD=wails"

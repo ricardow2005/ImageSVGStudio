@@ -1,0 +1,364 @@
+.updater-settings-button {
+  position: relative;
+  width: 44px;
+  min-width: 44px;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-left: 1px solid var(--line);
+  background: transparent;
+  color: var(--soft);
+  cursor: pointer;
+}
+
+.updater-settings-button:hover {
+  background: #ffffff0a;
+  color: white;
+}
+
+.updater-settings-button svg {
+  width: 17px;
+  height: 17px;
+  fill: currentColor;
+}
+
+.updater-dot {
+  position: absolute;
+  top: 11px;
+  right: 9px;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #63dda2;
+  border: 2px solid #10151f;
+  box-shadow: 0 0 0 1px #63dda244, 0 0 10px #63dda266;
+  opacity: 0;
+  transform: scale(.6);
+  transition: opacity .16s ease, transform .16s ease;
+}
+
+.updater-dot.visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.updater-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  background: rgba(4, 7, 13, .76);
+  backdrop-filter: blur(10px);
+}
+
+.updater-overlay.hidden {
+  display: none;
+}
+
+.updater-dialog {
+  width: min(680px, calc(100vw - 40px));
+  max-height: min(760px, calc(100vh - 40px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid #343e55;
+  border-radius: 16px;
+  background: #10151f;
+  box-shadow: 0 30px 100px #000b;
+}
+
+.updater-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 70px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+  background: #121827;
+}
+
+.updater-header strong,
+.updater-header span {
+  display: block;
+}
+
+.updater-header strong {
+  font-size: 15px;
+}
+
+.updater-header span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.updater-close {
+  width: 34px;
+  height: 34px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.updater-close:hover {
+  border-color: var(--line);
+  background: var(--panel2);
+  color: white;
+}
+
+.updater-content {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.updater-card {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--panel2);
+}
+
+.updater-card + .updater-card {
+  margin-top: 12px;
+}
+
+.updater-section-title {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #2a3345;
+}
+
+.updater-section-icon {
+  width: 35px;
+  height: 35px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border: 1px solid #7277ff55;
+  border-radius: 10px;
+  background: #7277ff14;
+  color: #b6b9ff;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.updater-section-title strong,
+.updater-section-title span {
+  display: block;
+}
+
+.updater-section-title strong {
+  font-size: 12px;
+}
+
+.updater-section-title span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.updater-version-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 15px 0 4px;
+}
+
+.updater-version-row > div {
+  min-width: 0;
+}
+
+.updater-label {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.updater-version-row strong {
+  font-size: 14px;
+  color: white;
+}
+
+.updater-button {
+  min-height: 34px;
+  padding: 0 13px;
+  border: 1px solid #3a4660;
+  border-radius: 8px;
+  background: #1b2331;
+  color: var(--soft);
+  font-size: 10px;
+  font-weight: 780;
+  cursor: pointer;
+}
+
+.updater-button:hover:not(:disabled) {
+  border-color: #56637f;
+  background: #222b3b;
+  color: white;
+}
+
+.updater-button:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
+.updater-button.primary {
+  border-color: #777cff;
+  background: linear-gradient(180deg, #777cff, #6267ee);
+  color: white;
+}
+
+.updater-button.primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, #898dff, #6d72f5);
+}
+
+.updater-status {
+  margin-top: 12px;
+  padding: 10px 11px;
+  border: 1px solid #2b3446;
+  border-radius: 9px;
+  background: #0f141e;
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.updater-status.muted {
+  color: var(--muted);
+}
+
+.updater-status.working {
+  color: #bec1ff;
+  border-color: #7478ff44;
+  background: #7478ff0c;
+}
+
+.updater-status.success {
+  color: #86e9b9;
+  border-color: #4fd09544;
+  background: #4fd0950d;
+}
+
+.updater-status.error {
+  color: #ff9aa5;
+  border-color: #ef6b7a44;
+  background: #ef6b7a0d;
+}
+
+.updater-release {
+  border-color: #5960ff70;
+  box-shadow: inset 0 0 0 1px #5960ff18;
+}
+
+.updater-release.hidden {
+  display: none;
+}
+
+.updater-release-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.updater-release-heading strong,
+.updater-eyebrow {
+  display: block;
+}
+
+.updater-release-heading strong {
+  margin-top: 4px;
+  font-size: 15px;
+}
+
+.updater-eyebrow {
+  color: #8be3b8;
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+
+.updater-version-pill {
+  flex: 0 0 auto;
+  padding: 6px 9px;
+  border: 1px solid #777cff66;
+  border-radius: 999px;
+  background: #777cff18;
+  color: #c5c7ff;
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.updater-published {
+  min-height: 15px;
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.updater-changelog-title {
+  margin-top: 14px;
+  margin-bottom: 7px;
+  color: var(--soft);
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.updater-changelog {
+  max-height: 260px;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid #2b3446;
+  border-radius: 9px;
+  background: #0c111a;
+  color: #c7cfdd;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: inherit;
+  font-size: 9px;
+  line-height: 1.55;
+  user-select: text;
+}
+
+.updater-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 13px;
+}
+
+@media (max-width: 720px) {
+  .updater-overlay {
+    padding: 10px;
+  }
+
+  .updater-dialog {
+    width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+  }
+
+  .updater-version-row,
+  .updater-release-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .updater-button {
+    width: 100%;
+  }
+
+  .updater-version-pill {
+    align-self: flex-start;
+  }
+}
