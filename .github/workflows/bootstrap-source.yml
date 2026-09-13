@@ -1,0 +1,42 @@
+name: Bootstrap source
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "project-source.zip"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  unpack:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract project source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .bootstrap-tmp
+          mkdir .bootstrap-tmp
+          unzip -q project-source.zip -d .bootstrap-tmp
+          cp -a .bootstrap-tmp/ImageSVGStudio-v0.2.10/. .
+          rm -rf .bootstrap-tmp project-source.zip
+          rm -f .github/workflows/bootstrap-source.yml
+
+      - name: Commit source tree
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git commit -m "feat: publish Image SVG Studio v0.2.10 source"
+          git push
