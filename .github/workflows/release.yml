@@ -1,0 +1,117 @@
+name: Windows Build & Release
+
+on:
+  push:
+    branches: ["main"]
+    tags: ["v*"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: "Create/update a GitHub Release and attach the Windows build"
+        required: true
+        default: false
+        type: boolean
+      version:
+        description: "Version override (example: 0.2.10). Leave blank to use version/version.go"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Windows x64
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.24.x"
+          cache: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+
+      - name: Download Go modules
+        run: go mod download
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        shell: pwsh
+        run: |
+          if (Test-Path package-lock.json) {
+            npm ci
+          } else {
+            npm install
+          }
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.10.2
+
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        run: |
+          $versionLine = Select-String -Path version/version.go -Pattern 'Version\s*=\s*"([^"]+)"'
+          if (!$versionLine) { throw "Version not found in version/version.go" }
+          $version = $versionLine.Matches[0].Groups[1].Value
+
+          if ("${{ github.event_name }}" -eq "workflow_dispatch" -and "${{ inputs.version }}".Trim() -ne "") {
+            $version = "${{ inputs.version }}".Trim().TrimStart('v')
+          } elseif ("${{ github.ref_type }}" -eq "tag") {
+            $version = "${{ github.ref_name }}".TrimStart('v')
+          }
+
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=v$version" >> $env:GITHUB_OUTPUT
+          Write-Host "Building Image SVG Studio $version"
+
+      - name: Build Windows executable
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $commit = "${{ github.sha }}".Substring(0, 7)
+          $date = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
+
+          wails build -platform windows/amd64 -clean -ldflags "-X image-svg-studio/version.Version=$version -X image-svg-studio/version.Commit=$commit -X image-svg-studio/version.BuildDate=$date"
+
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $exe = "dist/ImageSVGStudio-$version-windows-amd64.exe"
+          Copy-Item build/bin/ImageSVGStudio.exe $exe
+          Compress-Archive -Path $exe -DestinationPath "dist/ImageSVGStudio-$version-windows-amd64.zip" -Force
+          (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower() | Out-File "dist/ImageSVGStudio-$version-windows-amd64.sha256" -Encoding ascii -NoNewline
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ImageSVGStudio-${{ steps.version.outputs.version }}-windows-amd64
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create or update GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.create_release)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ steps.version.outputs.tag }}"
+          $title = "Image SVG Studio $tag"
+
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag dist/* --clobber
+          } else {
+            gh release create $tag dist/* --title $title --generate-notes --target "${{ github.sha }}"
+          }
