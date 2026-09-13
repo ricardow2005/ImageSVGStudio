@@ -5,7 +5,7 @@ on:
     branches: ["main"]
     paths:
       - ".github/workflows/bootstrap.yml"
-      - ".bootstrap/**"
+      - "payload.part*"
   workflow_dispatch:
 
 permissions:
@@ -22,46 +22,40 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Extract source package
+      - name: Reconstruct and verify source package
         shell: bash
         run: |
           set -euo pipefail
-          ARCHIVE=".bootstrap/ImageSVGStudio-v0.2.10-source.zip"
+
+          for i in $(seq -w 0 12); do
+            test -f "payload.part$i"
+          done
+
+          cat payload.part{00..12} | tr -d '\r\n' | base64 --decode > /tmp/ImageSVGStudio-v0.2.10-source.zip
+
+          EXPECTED="fe4ada36c5cfb917b8f7f1f86ed7a8f4f0255f323f78c335b0d9965f8d74600e"
+          ACTUAL="$(sha256sum /tmp/ImageSVGStudio-v0.2.10-source.zip | awk '{print $1}')"
+          echo "Archive SHA256: $ACTUAL"
+          test "$ACTUAL" = "$EXPECTED"
+          unzip -t /tmp/ImageSVGStudio-v0.2.10-source.zip
+
           PREPARED="/tmp/ImageSVGStudio-v0.2.10-source"
-          EXPANDED="/tmp/ImageSVGStudio-v0.2.10-expanded"
+          rm -rf "$PREPARED"
+          mkdir -p "$PREPARED"
+          unzip -q /tmp/ImageSVGStudio-v0.2.10-source.zip -d "$PREPARED"
 
-          test -f "$ARCHIVE"
-          unzip -t "$ARCHIVE"
-          rm -rf "$PREPARED" "$EXPANDED"
-          mkdir -p "$PREPARED" "$EXPANDED"
-          unzip -q "$ARCHIVE" -d "$EXPANDED"
-
-          if [ -f "$EXPANDED/main.go" ]; then
-            SOURCE_ROOT="$EXPANDED"
-          elif [ -f "$EXPANDED/ImageSVGStudio-v0.2.10/main.go" ]; then
-            SOURCE_ROOT="$EXPANDED/ImageSVGStudio-v0.2.10"
-          else
-            echo "Archive contents:"
-            find "$EXPANDED" -maxdepth 3 -type f -print
-            echo "main.go not found in source archive."
-            exit 1
-          fi
-
-          cp -a "$SOURCE_ROOT"/. "$PREPARED"/
           test -f "$PREPARED/main.go"
           test -f "$PREPARED/go.mod"
           test -f "$PREPARED/frontend/package.json"
+          test -f "$PREPARED/LICENSE"
 
-          cp LICENSE "$PREPARED/LICENSE"
+          # Keep the latest release workflow from main.
           mkdir -p "$PREPARED/.github/workflows"
           cp .github/workflows/release.yml "$PREPARED/.github/workflows/release.yml"
 
+          # Never publish bootstrap staging files.
           rm -f "$PREPARED/.github/workflows/bootstrap.yml" "$PREPARED/.github/workflows/bootstrap-source.yml"
           rm -rf "$PREPARED/.bootstrap"
-          find "$PREPARED" -maxdepth 1 \( -name 'payload.part*' -o -name 'project-source.b64.part*' -o -name 'source.b64.part*' -o -name 'minsrc*.b64.part*' -o -name 'bootstrap.ready' -o -name 'project-source.zip' \) -delete
-
-          echo "Prepared source files:"
-          find "$PREPARED" -maxdepth 2 -type f -print | sort
 
       - name: Publish clean source tree
         shell: bash
