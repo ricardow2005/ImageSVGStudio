@@ -101,7 +101,7 @@ jobs:
           retention-days: 30
 
       - name: Create or update GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.create_release)
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_release)
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
