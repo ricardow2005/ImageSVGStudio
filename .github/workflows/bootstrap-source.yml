@@ -4,7 +4,7 @@ on:
   push:
     branches: ["main"]
     paths:
-      - "project-source.b64.part*"
+      - "minsrc.b64.part*"
   workflow_dispatch:
 
 permissions:
@@ -21,13 +21,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat project-source.b64.part* | tr -d '\n\r' | base64 -d > project-source.zip
-          unzip -t project-source.zip
+          cat minsrc.b64.part* | tr -d '\n\r' | base64 -d > minsrc.zip
+          unzip -t minsrc.zip
           rm -rf .bootstrap-tmp
           mkdir .bootstrap-tmp
-          unzip -q project-source.zip -d .bootstrap-tmp
-          cp -a .bootstrap-tmp/ImageSVGStudio-v0.2.10/. .
-          rm -rf .bootstrap-tmp project-source.zip project-source.b64.part*
+          unzip -q minsrc.zip -d .bootstrap-tmp
+          cp -a .bootstrap-tmp/. .
+          rm -rf .bootstrap-tmp minsrc.zip minsrc.b64.part* project-source.zip project-source.b64.part*
           rm -f .github/workflows/bootstrap-source.yml
 
       - name: Commit source tree
